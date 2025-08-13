@@ -1,0 +1,53 @@
+/* Custom styles to complement Tailwind CSS */
+
+/* Styling for the rendered markdown content */
+#markdown-viewer h1, #markdown-viewer h2, #markdown-viewer h3 {
+    font-weight: bold;
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+}
+#markdown-viewer h1 { font-size: 1.875rem; }
+#markdown-viewer h2 { font-size: 1.5rem; }
+#markdown-viewer h3 { font-size: 1.25rem; }
+
+#markdown-viewer p {
+    margin-bottom: 1em;
+    line-height: 1.6;
+}
+
+#markdown-viewer ul, #markdown-viewer ol {
+    margin-left: 1.5rem;
+    margin-bottom: 1em;
+}
+
+#markdown-viewer ul { list-style-type: disc; }
+#markdown-viewer ol { list-style-type: decimal; }
+
+#markdown-viewer a {
+    color: #2563eb; /* Tailwind's blue-600 */
+    text-decoration: underline;
+}
+
+#markdown-viewer code {
+    background-color: #f3f4f6; /* Tailwind's gray-100 */
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+#markdown-viewer pre {
+    background-color: #f3f4f6; /* Tailwind's gray-100 */
+    padding: 1rem;
+    border-radius: 0.375rem; /* rounded-md */
+    overflow-x: auto;
+}
+
+#pdf-viewer iframe {
+    border: none;
+    width: 100%;
+    height: 100%;
+}
+
+.hidden {
+    display: none;
+}

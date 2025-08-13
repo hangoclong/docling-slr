@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docling - SLR Paper to Markdown Converter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+</head>
+<body class="bg-gray-50 font-sans text-gray-800">
+    <div id="app-container" class="flex flex-col h-screen">
+        <!-- Header -->
+        <header class="flex-shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 border-b border-white/10 shadow-sm">
+            <div class="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-2 flex items-center justify-between text-white">
+                <div class="flex items-center gap-3">
+                    <div class="h-7 w-7 rounded bg-white/20 flex items-center justify-center font-semibold leading-none">D</div>
+                    <div>
+                        <h1 class="text-base sm:text-lg font-semibold tracking-tight">Docling</h1>
+                        <p class="text-[11px] sm:text-xs text-white/80">Precision PDF‑to‑Markdown for Systematic Reviews</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Sidebar -->
+            <aside id="file-list-panel" class="w-72 bg-white border-r border-gray-200 flex flex-col p-4 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-semibold">Uploaded Files</h2>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="select-all-checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" title="Select All">
+                        <button id="download-chunk-button" class="p-1.5 bg-green-600 text-white rounded-md shadow-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled title="Download Selected">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <ul id="file-list" class="flex-1 overflow-y-auto space-y-2"></ul>
+                <div id="upload-box" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                    <input type="file" id="file-input" multiple hidden>
+                    <p class="text-sm text-gray-600">Drag & Drop or <strong class="text-blue-600">Click to Upload</strong></p>
+                </div>
+                <!-- On-Screen Log Panel -->
+                <div class="mt-4 p-2 border-t border-gray-200">
+                    <h3 class="text-sm font-semibold text-gray-600">Event Log</h3>
+                    <div id="log-output" class="mt-2 p-2 bg-gray-50 h-24 overflow-y-auto text-xs text-gray-500 rounded"></div>
+                </div>
+            </aside>
+
+            <!-- Viewer Panel -->
+            <main id="viewer-panel" class="flex-1 flex flex-col bg-gray-100">
+                <div id="viewer-placeholder" class="flex-1 flex items-center justify-center">
+                    <p class="text-gray-500 text-lg font-medium">Select a file to begin conversion</p>
+                </div>
+
+                <div id="main-content" class="hidden flex-1 flex flex-col h-full">
+                    <!-- Viewer Header -->
+                    <div class="bg-white border-b border-gray-200 p-2 flex justify-between items-center flex-shrink-0">
+                        <h2 class="text-lg font-medium text-gray-900">Document Viewer</h2>
+                        <!-- Markdown Controls -->
+                        <div class="flex items-center space-x-4">
+                            <div class="render-switch flex items-center space-x-2">
+                                <input type="checkbox" id="render-toggle" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                <label for="render-toggle" class="text-sm font-medium text-gray-700">Render Markdown</label>
+                            </div>
+                            <button id="save-button" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md shadow-sm hover:bg-blue-700">Save Markdown</button>
+                        </div>
+                    </div>
+
+                    <!-- Scrolling Content Area -->
+                    <div class="flex-1 flex flex-row gap-4 p-4 overflow-y-hidden">
+                        <!-- PDF Panel -->
+                        <div class="flex-1 flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
+                            <h3 class="p-2 border-b text-sm font-semibold text-gray-700 flex-shrink-0">Original PDF</h3>
+                            <div id="pdf-viewer" class="flex-1 overflow-y-auto">
+                                <!-- PDF iframe is inserted here -->
+                            </div>
+                        </div>
+
+                        <!-- Markdown Panel -->
+                        <div class="flex-1 flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
+                            <h3 class="p-2 border-b text-sm font-semibold text-gray-700 flex-shrink-0">Converted Markdown</h3>
+                            <div id="markdown-viewer" class="flex-1 overflow-y-auto p-6">
+                                <!-- Markdown content is inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="w-16 h-16 border-4 border-t-blue-500 border-gray-200 rounded-full animate-spin"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+</html>
