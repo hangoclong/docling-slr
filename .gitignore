@@ -121,3 +121,6 @@ docling.db
 .serena/
 .gemini/
 .bmad-core/
+
+# App upload artifacts (user PDFs)
+docling_app/uploads/
