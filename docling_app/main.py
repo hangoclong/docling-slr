@@ -1,4 +1,6 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -34,32 +36,41 @@ if not os.path.exists(UPLOAD_DIR):
 def on_startup():
     init_db()
 
-# --- Background Task ---
-def run_conversion(file_id: str, file_path: str):
-    """The actual conversion logic that runs in the background."""
+# --- Process Pool for CPU-bound tasks ---
+process_pool = ProcessPoolExecutor(max_workers=3)
+
+def run_conversion_in_process(file_id: str, file_path: str, mode: str = "balanced"):
+    """The actual conversion logic that runs in a separate process."""
+    # This function is now run in a separate process, so it needs its own DB connection.
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    job_id = str(uuid.uuid4())
-    markdown_content = convert_pdf_to_markdown(file_path)
+    try:
+        # Pass mode to the converter
+        markdown_content = convert_pdf_to_markdown(file_path, mode=mode)
+        if markdown_content:
+            status = "completed"
+            error_message = None
+        else:
+            status = "failed"
+            error_message = "Failed to convert PDF with Docling."
 
-    if markdown_content:
-        status = "completed"
-        error_message = None
-    else:
-        status = "failed"
-        error_message = "Failed to convert PDF with Docling."
+        job_id = str(uuid.uuid4())
+        cursor.execute(
+            "INSERT INTO conversion_jobs (id, file_id, status, result, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (job_id, file_id, status, markdown_content, error_message, datetime.datetime.now().isoformat())
+        )
+        # Update the master file record with the final status
+        cursor.execute("UPDATE files SET status = ?, completed_at = ? WHERE id = ?", (status, datetime.datetime.now().isoformat(), file_id))
 
-    cursor.execute(
-        "INSERT INTO conversion_jobs (id, file_id, status, result, error_message, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (job_id, file_id, status, markdown_content, error_message, datetime.datetime.now().isoformat())
-    )
+    except Exception as e:
+        # Log errors and update status to 'failed'
+        print(f"Error during conversion for {file_id}: {e}")
+        cursor.execute("UPDATE files SET status = 'failed', completed_at = ? WHERE id = ?", (datetime.datetime.now().isoformat(), file_id))
 
-    # Update the master file record with the final status and completion time
-    cursor.execute("UPDATE files SET status = ?, completed_at = ? WHERE id = ?", (status, datetime.datetime.now().isoformat(), file_id))
-
-    conn.commit()
-    conn.close()
+    finally:
+        conn.commit()
+        conn.close()
 
 # --- API Endpoints ---
 @app.get("/", response_class=HTMLResponse)
@@ -121,7 +132,18 @@ async def get_status(file_id: str):
         raise HTTPException(status_code=404, detail="File not found")
 
 @app.post("/convert/{file_id}")
-def convert_file(file_id: str, background_tasks: BackgroundTasks):
+async def convert_file(file_id: str, mode: str = "balanced"):
+    """Start conversion for a file with the specified mode.
+    
+    Args:
+        file_id: The ID of the uploaded file.
+        mode: Conversion mode - 'fast', 'balanced', or 'accurate'.
+    """
+    # Validate mode
+    valid_modes = ["fast", "balanced", "accurate"]
+    if mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -137,9 +159,10 @@ def convert_file(file_id: str, background_tasks: BackgroundTasks):
     conn.commit()
     conn.close()
 
-    background_tasks.add_task(run_conversion, file_id, file_path)
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(process_pool, run_conversion_in_process, file_id, file_path, mode)
 
-    return {"message": f"Conversion started for {file_id}"}
+    return {"message": f"Conversion queued for {file_id} with mode={mode}"}
 
 @app.get("/result/{file_id}")
 def get_result(file_id: str):
@@ -154,6 +177,10 @@ def get_result(file_id: str):
 
 class DownloadRequest(BaseModel):
     file_ids: List[str]
+
+class ChunkedDownloadRequest(BaseModel):
+    file_ids: List[str]
+    chunk_size: int
 
 @app.post("/download-chunk")
 async def download_chunk(request: DownloadRequest):
@@ -191,6 +218,65 @@ async def download_chunk(request: DownloadRequest):
             "Content-Disposition": f"attachment; filename=docling_chunk_{datetime.datetime.now().strftime('%Y-%m-%d')}.md"
         }
     )
+
+@app.post("/download-chunked")
+async def download_chunked(request: ChunkedDownloadRequest):
+    """Returns information about how the files will be chunked based on the requested chunk size."""
+    if request.chunk_size < 1:
+        raise HTTPException(status_code=400, detail="Chunk size must be at least 1.")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get original filenames for all file IDs
+    file_info = {}
+    for file_id in request.file_ids:
+        cursor.execute("SELECT original_filename FROM files WHERE id = ?", (file_id,))
+        file_record = cursor.fetchone()
+        if file_record:
+            # Remove .pdf extension if present and store the base filename
+            original_name = file_record[0]
+            if original_name.lower().endswith('.pdf'):
+                original_name = original_name[:-4]
+            file_info[file_id] = original_name
+        else:
+            file_info[file_id] = f"unknown-{file_id}"
+    
+    # Calculate how many chunks we'll have
+    total_files = len(request.file_ids)
+    total_chunks = (total_files + request.chunk_size - 1) // request.chunk_size  # Ceiling division
+    
+    # Create the chunk information
+    chunks = []
+    for i in range(total_chunks):
+        start_idx = i * request.chunk_size
+        end_idx = min(start_idx + request.chunk_size, total_files)
+        chunk_file_ids = request.file_ids[start_idx:end_idx]
+        
+        # Include file info in the chunk data
+        chunk_files = []
+        for idx, file_id in enumerate(chunk_file_ids):
+            chunk_files.append({
+                "file_id": file_id,
+                "original_filename": file_info.get(file_id, f"unknown-{file_id}"),
+                "number_in_chunk": idx + 1
+            })
+        
+        chunks.append({
+            "chunk_number": i + 1,
+            "file_ids": chunk_file_ids,
+            "files": chunk_files,
+            "file_count": len(chunk_file_ids)
+        })
+    
+    conn.close()
+    
+    return {
+        "total_files": total_files,
+        "chunk_size": request.chunk_size,
+        "total_chunks": total_chunks,
+        "chunks": chunks
+    }
 
 @app.get("/pdf/{file_id}")
 async def get_pdf(file_id: str):
