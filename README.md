@@ -11,7 +11,22 @@ A simple UI to convert documents (PDF, DOCX, etc.) to Markdown using the `doclin
 
 ## Setup (Python venv)
 
-Run these commands from the repository root (`docling/`).
+1. **Clone the repository**
+2. **Run the startup script** (this will create the virtual environment, install dependencies, and start the server):
+
+   - **Windows:** Double-click `start.bat` or run:
+     ```cmd
+     .\start.bat
+     ```
+   - **macOS/Linux:** Run the shell script:
+     ```bash
+     ./start.sh
+     ```
+
+The app will be available at `http://localhost:8008`.
+
+### Manual Setup (Optional)
+Run these commands from the repository root:
 
 ```bash
 # 1) Create a virtual environment (Python 3)
@@ -32,25 +47,12 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Start the app (dev server)
+## Memory Configuration (GPU)
 
-Start the FastAPI app with Uvicorn from the repo root:
-
-```bash
-uvicorn docling_app.main:app --reload --port 8008
-```
-
-Then open:
-
-```
-http://localhost:8008
-```
-
-One-liner (macOS/Linux):
-
-```bash
-source .venv/bin/activate && uvicorn docling_app.main:app --reload --port 8008
-```
+The Docling converter is optimized for 4GB VRAM GPUs (like the RTX 3050 Ti). The `converter.py` includes several memory-safe settings to prevent `std::bad_alloc` and CUDA Out-Of-Memory errors:
+- **Backend**: Uses `PyPdfiumDocumentBackend` instead of the default C++ backend.
+- **Batch Sizes**: Explicitly sets `table_batch_size=1`, `layout_batch_size=2`, and `ocr_batch_size=2`.
+- **PyTorch Settings**: The `start.bat` sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce VRAM fragmentation.
 
 ## Directory layout (key paths)
 
