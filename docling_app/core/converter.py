@@ -11,6 +11,7 @@ import logging
 from typing import Literal
 
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions,
     AcceleratorOptions,
@@ -30,11 +31,20 @@ def _get_pipeline_options(mode: ConversionMode) -> PdfPipelineOptions:
     """Returns pipeline options based on the selected mode."""
     opts = PdfPipelineOptions()
     
-    # Hardware acceleration - use all available cores and auto-detect GPU
+    # Timeout protection for problematic pages
+    opts.document_timeout = 120  # seconds
+    
+    # Hardware acceleration
+    # Use 2 threads to avoid GPU Out-Of-Memory errors on GPUs like 3050 Ti (4GB VRAM)
     opts.accelerator_options = AcceleratorOptions(
-        num_threads=os.cpu_count() or 4,
+        num_threads=2,
         device="auto",  # auto-detects MPS (macOS) / CUDA / CPU
     )
+    
+    # GPU-safe batch sizes for 4GB VRAM GPUs (defaults are 4, too high for small GPUs)
+    opts.layout_batch_size = 2
+    opts.table_batch_size = 1  # TableFormer is most memory-intensive
+    opts.ocr_batch_size = 2
     
     if mode == "fast":
         # Fastest mode: skip everything optional
@@ -80,6 +90,7 @@ def get_converter(mode: ConversionMode = "balanced") -> DocumentConverter:
     format_options = {
         InputFormat.PDF: PdfFormatOption(
             pipeline_options=pipeline_options,
+            backend=PyPdfiumDocumentBackend,  # memory-safe backend (avoids std::bad_alloc)
         )
     }
     return DocumentConverter(format_options=format_options)
